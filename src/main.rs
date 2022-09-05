@@ -37,16 +37,20 @@ use opts::{Mode, Opts};
 async fn main() -> Result<()> {
   let opts = Opts::parse();
   println!("{opts:?}");
+
   let local_key = generate_ed25519(opts.secret_key_seed);
   let local_peer_id = PeerId::from(local_key.public());
   println!("Local peer id: {:?}", local_peer_id);
 
-  let (relay_transport, client) = Client::new_transport_and_behaviour(local_peer_id);
-
+  // Create a keypair for authenticated encryption of the transport.
   let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
     .into_authentic(&local_key)
     .expect("Signing libp2p-noise static DH keypair failed.");
 
+  let (relay_transport, client) = Client::new_transport_and_behaviour(local_peer_id);
+
+  // Create a tokio-based TCP transport use noise for authenticated
+  // encryption and Mplex for multiplexing of substreams on a TCP stream.
   let transport = OrTransport::new(
     relay_transport,
     block_on(DnsConfig::system(TokioTcpTransport::new(
@@ -59,6 +63,7 @@ async fn main() -> Result<()> {
   .multiplex(libp2p_yamux::YamuxConfig::default())
   .boxed();
 
+  // Create a Gossipsub topic
   let topic = gossipsub::IdentTopic::new("chat");
 
   let mut swarm = {
@@ -69,14 +74,14 @@ async fn main() -> Result<()> {
       .build()
       .expect("Valid config");
 
-    // build a gossipsub network behaviour
+    // Build a gossipsub network behaviour
     let mut gossipsub: gossipsub::Gossipsub = gossipsub::Gossipsub::new(
       MessageAuthenticity::Signed(local_key.clone()),
       gossipsub_config,
     )
     .expect("Correct configuration");
 
-    // subscribes to our topic
+    // Subscribes to our topic
     gossipsub.subscribe(&topic).unwrap();
 
     let behaviour = Behaviour {
