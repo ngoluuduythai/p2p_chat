@@ -7,19 +7,22 @@ use libp2p::{core::Multiaddr, PeerId};
 #[clap(name = "Chat app p2p")]
 pub struct Opts {
   /// The mode (client-listen, client-dial).
-  #[clap(long)]
+  #[clap(short, long, default_value = "listen")]
   pub mode: Mode,
 
   /// Fixed value to generate deterministic peer id.
-  #[clap(long)]
+  #[clap(short, long)]
   pub secret_key_seed: u8,
 
   /// The listening address
-  #[clap(long)]
+  #[clap(
+    long,
+    default_value = "/ip4/3.19.56.240/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+  )]
   pub relay_address: Multiaddr,
 
   /// Peer ID of the remote peer to hole punch to.
-  #[clap(long)]
+  #[clap(short, long)]
   pub remote_peer_id: Option<PeerId>,
 }
 

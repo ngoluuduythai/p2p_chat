@@ -11,6 +11,9 @@ use futures::stream::StreamExt;
 use futures::{executor::block_on, FutureExt};
 use libp2p::gossipsub::{self, MessageAuthenticity, ValidationMode};
 use libp2p::identify::IdentifyEvent;
+use libp2p::kad::store::MemoryStore;
+use libp2p::kad::{Kademlia, KademliaConfig};
+use libp2p::mdns::{MdnsConfig, MdnsEvent, TokioMdns};
 use libp2p::relay::v2::client;
 use libp2p::{
   core::{transport::OrTransport, upgrade},
@@ -60,13 +63,22 @@ async fn main() -> Result<()> {
   )
   .upgrade(upgrade::Version::V1)
   .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
-  .multiplex(libp2p_yamux::YamuxConfig::default())
+  .multiplex(libp2p::yamux::YamuxConfig::default())
   .boxed();
 
   // Create a Gossipsub topic
   let topic = gossipsub::IdentTopic::new("chat");
 
   let mut swarm = {
+    // Set mDNS
+    let mdns = TokioMdns::new(MdnsConfig::default()).await?;
+
+    // let mut cfg = KademliaConfig::default();
+    // cfg.set_query_timeout(std::time::Duration::from_secs(5 * 60));
+
+    // let store = MemoryStore::new(local_peer_id);
+    // let kademlia = Kademlia::with_config(local_peer_id, store, cfg);
+
     // Set a custom gossipsub
     let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
       .heartbeat_interval(std::time::Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
@@ -93,6 +105,7 @@ async fn main() -> Result<()> {
       )),
       dcutr: dcutr::behaviour::Behaviour::new(),
       gossipsub,
+      mdns,
     };
 
     // build the swarm
@@ -155,7 +168,21 @@ async fn main() -> Result<()> {
           println!("Relay told us our public address: {:?}", observed_addr);
           learned_observed_addr = true;
         }
-        event => panic!("{:?}", event),
+        SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+          MdnsEvent::Discovered(list) => {
+            for (peer, _) in list {
+              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+            }
+          }
+          MdnsEvent::Expired(list) => {
+            for (peer, _) in list {
+              if !swarm.behaviour().mdns.has_node(&peer) {
+                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+              }
+            }
+          }
+        },
+        event => println!("{:?}", event),
       }
 
       if learned_observed_addr && told_relay_observed_addr {
@@ -204,6 +231,12 @@ async fn main() -> Result<()> {
               message.source
             );
           }
+          SwarmEvent::Behaviour(Event::Mdns(event)) => {
+            println!("{event:?}");
+          }
+          // SwarmEvent::Behaviour(Event::Kademlia(event)) => {
+          //   println!("{event:?}");
+          // }
           SwarmEvent::NewListenAddr { address, .. } => {
               println!("Listening on {:?}", address);
           }
@@ -217,7 +250,7 @@ async fn main() -> Result<()> {
               println!("{:?}", event)
           }
           SwarmEvent::Behaviour(Event::Dcutr(event)) => {
-              println!("halo: {:?}", event)
+              println!("{:?}", event)
           }
           SwarmEvent::Behaviour(Event::Identify(event)) => {
               println!("{:?}", event)

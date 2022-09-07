@@ -6,8 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libp2p = { version = "*", features = ["dcutr", "tcp-tokio"] }
-libp2p-yamux = "*"
+libp2p = { git = "https://github.com/libp2p/rust-libp2p", features = ["dcutr", "tcp-tokio", "mdns-tokio"] }
 clap = { version = "3.1", features = ["derive"] }
 futures = "0.3"
 futures-timer = "3.0"
