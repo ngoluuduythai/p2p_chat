@@ -29,6 +29,7 @@ use libp2p::{
   tcp::{GenTcpConfig, TokioTcpTransport},
   Multiaddr, PeerId, Transport,
 };
+use rand::Rng;
 use tokio::io::AsyncBufReadExt;
 
 use behaviour::Behaviour;
@@ -41,7 +42,9 @@ async fn main() -> Result<()> {
   let opts = Opts::parse();
   println!("{opts:?}");
 
-  let local_key = generate_ed25519(opts.secret_key_seed);
+  let mut rng = rand::thread_rng();
+  let random_seed: u8 = rng.gen();
+  let local_key = generate_ed25519(random_seed);
   let local_peer_id = PeerId::from(local_key.public());
   println!("Local peer id: {:?}", local_peer_id);
 

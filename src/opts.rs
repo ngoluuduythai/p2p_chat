@@ -10,10 +10,6 @@ pub struct Opts {
   #[clap(short, long, default_value = "listen")]
   pub mode: Mode,
 
-  /// Fixed value to generate deterministic peer id.
-  #[clap(short, long)]
-  pub secret_key_seed: u8,
-
   /// The listening address
   #[clap(
     long,

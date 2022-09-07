@@ -406,6 +406,7 @@ dependencies = [
  "futures-timer",
  "libp2p",
  "log",
+ "rand 0.7.3",
  "tokio",
  "tokio-util",
 ]
