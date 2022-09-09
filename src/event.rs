@@ -5,16 +5,18 @@ use libp2p::kad::KademliaEvent;
 use libp2p::mdns::MdnsEvent;
 use libp2p::ping::PingEvent;
 use libp2p::relay::v2::client;
+use libp2p::autonat;
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub enum Event {
   Ping(PingEvent),
   Identify(IdentifyEvent),
   Relay(client::Event),
   Dcutr(dcutr::behaviour::Event),
   Gossipsub(GossipsubEvent),
-  // Kademlia(KademliaEvent),
+  Kademlia(KademliaEvent),
   Mdns(MdnsEvent),
+  AutoNat(autonat::Event),
 }
 
 impl From<PingEvent> for Event {
@@ -53,8 +55,14 @@ impl From<MdnsEvent> for Event {
   }
 }
 
-// impl From<KademliaEvent> for Event {
-//   fn from(e: KademliaEvent) -> Self {
-//     Event::Kademlia(e)
-//   }
-// }
+impl From<KademliaEvent> for Event {
+  fn from(e: KademliaEvent) -> Self {
+    Event::Kademlia(e)
+  }
+}
+
+impl From<autonat::Event> for Event {
+  fn from(event: autonat::Event) -> Self {
+      Event::AutoNat(event)
+  }
+}

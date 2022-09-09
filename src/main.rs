@@ -12,7 +12,6 @@ use futures::{executor::block_on, FutureExt};
 use libp2p::gossipsub::{self, MessageAuthenticity, ValidationMode};
 use libp2p::identify::IdentifyEvent;
 use libp2p::kad::store::MemoryStore;
-use libp2p::kad::{Kademlia, KademliaConfig};
 use libp2p::mdns::{MdnsConfig, MdnsEvent, TokioMdns};
 use libp2p::relay::v2::client;
 use libp2p::{
@@ -35,7 +34,21 @@ use tokio::io::AsyncBufReadExt;
 use behaviour::Behaviour;
 use event::Event;
 use helper::generate_ed25519;
+use libp2p::autonat;
+use libp2p::kad;
 use opts::{Mode, Opts};
+use std::str::FromStr;
+use std::task::Poll;
+use std::time::Duration;
+
+const BOOTNODES: [&str; 1] = [
+  "QmRnj8vCgyjuE2BcYrUcJsskaxasLSxCzvJB2jbsSptsdQ",
+];
+
+const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+use futures_timer::Delay;
+use libp2p::kad::{GetClosestPeersError, Kademlia, KademliaConfig, KademliaEvent, QueryResult};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -70,17 +83,46 @@ async fn main() -> Result<()> {
   .boxed();
 
   // Create a Gossipsub topic
-  let topic = gossipsub::IdentTopic::new("chat");
+  let topic = gossipsub::IdentTopic::new("librum_1");
 
   let mut swarm = {
     // Set mDNS
     let mdns = TokioMdns::new(MdnsConfig::default()).await?;
 
-    // let mut cfg = KademliaConfig::default();
-    // cfg.set_query_timeout(std::time::Duration::from_secs(5 * 60));
+    let mut cfg = KademliaConfig::default();
+    cfg.set_query_timeout(std::time::Duration::from_secs(5 * 60));
 
-    // let store = MemoryStore::new(local_peer_id);
-    // let kademlia = Kademlia::with_config(local_peer_id, store, cfg);
+    let store = MemoryStore::new(local_peer_id);
+    //let kademlia = Kademlia::with_config(local_peer_id, store, cfg);
+
+    let mut kademlia_config = KademliaConfig::default();
+    // Instantly remove records and provider records.
+    //
+    // TODO: Replace hack with option to disable both.
+    kademlia_config.set_record_ttl(Some(Duration::from_secs(0)));
+    kademlia_config.set_provider_record_ttl(Some(Duration::from_secs(0)));
+    let mut kademlia = Kademlia::with_config(local_peer_id, store, kademlia_config);
+
+    //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
+    //ip4/192.168.2.33/tcp/4001
+    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/7654/p2p/QmRnj8vCgyjuE2BcYrUcJsskaxasLSxCzvJB2jbsSptsdQ").unwrap();
+
+    let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
+      PeerId::from_multihash(boot_peerid).unwrap()
+    } else {
+      panic!("invalid boot peerid");
+    };
+  
+    println!("bootaddr: {boot_addr}");
+  
+
+    //for peer in &BOOTNODES {
+    kademlia.add_address(&boot_peerid, boot_addr.clone());
+    //}
+
+    // Not find another peer when don't have boostrap  
+    let _ = kademlia.bootstrap().unwrap();
+    println!("Boostrap: {local_peer_id} success to DHT with qeury id");
 
     // Set a custom gossipsub
     let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
@@ -96,6 +138,8 @@ async fn main() -> Result<()> {
     )
     .expect("Correct configuration");
 
+    let auto_nat = autonat::Behaviour::new(local_peer_id, Default::default());
+
     // Subscribes to our topic
     gossipsub.subscribe(&topic).unwrap();
 
@@ -109,6 +153,8 @@ async fn main() -> Result<()> {
       dcutr: dcutr::behaviour::Behaviour::new(),
       gossipsub,
       mdns,
+      kademlia,
+      autonat: auto_nat,
     };
 
     // build the swarm
@@ -134,9 +180,11 @@ async fn main() -> Result<()> {
           event = swarm.next() => {
               match event.unwrap() {
                   SwarmEvent::NewListenAddr { address, .. } => {
-                      println!("Listening on {:?}", address);
+                      println!("NewListenAddr Listening on {:?}", address);
                   }
-                  event => panic!("{:?}", event),
+                  event => {
+                    //panic!("{:?}", event)
+                  },
               }
           }
           _ = delay => {
@@ -150,6 +198,7 @@ async fn main() -> Result<()> {
   // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
   // our local public address and (b) enable a freshly started relay to learn its public address.
   swarm.dial(opts.relay_address.clone()).unwrap();
+
   block_on(async {
     let mut learned_observed_addr = false;
     let mut told_relay_observed_addr = false;
@@ -171,21 +220,21 @@ async fn main() -> Result<()> {
           println!("Relay told us our public address: {:?}", observed_addr);
           learned_observed_addr = true;
         }
-        SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
-          MdnsEvent::Discovered(list) => {
-            for (peer, _) in list {
-              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-            }
-          }
-          MdnsEvent::Expired(list) => {
-            for (peer, _) in list {
-              if !swarm.behaviour().mdns.has_node(&peer) {
-                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
-              }
-            }
-          }
-        },
-        event => println!("{:?}", event),
+        // SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+        //   MdnsEvent::Discovered(list) => {
+        //     for (peer, _) in list {
+        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        //     }
+        //   }
+        //   MdnsEvent::Expired(list) => {
+        //     for (peer, _) in list {
+        //       if !swarm.behaviour().mdns.has_node(&peer) {
+        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+        //       }
+        //     }
+        //   }
+        // },
+        event => println!("event"),
       }
 
       if learned_observed_addr && told_relay_observed_addr {
@@ -213,18 +262,150 @@ async fn main() -> Result<()> {
   }
 
   let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+  //let mut bootstrap_timer = Delay::new(BOOTSTRAP_INTERVAL);
+  //let _ = swarm.behaviour_mut().kademlia.bootstrap();
+
+  //   block_on(async {
+  //     loop {
+
+  //         //if let Poll::Ready(()) = futures::poll!(&mut bootstrap_timer) {
+  //            // bootstrap_timer.reset(BOOTSTRAP_INTERVAL);
+  //             let _ = swarm
+  //                 .behaviour_mut()
+  //                 .kademlia
+  //                 .bootstrap();
+  //        // }
+
+  //         match swarm.next().await.expect("Swarm not to terminate.") {
+  //             SwarmEvent::Behaviour(Event::Identify(e)) => {
+  //               println!("Identify {:?}", e);
+
+  //                 if let IdentifyEvent::Received {
+  //                     peer_id,
+  //                     info:
+  //                         IdentifyInfo {
+  //                             listen_addrs,
+  //                             protocols,
+  //                             ..
+  //                         },
+  //                 } = e
+  //                 {
+  //                     if protocols
+  //                         .iter()
+  //                         .any(|p| p.as_bytes() == kad::protocol::DEFAULT_PROTO_NAME)
+  //                     {
+  //                         for addr in listen_addrs {
+  //                           println!("Update local DHT {:?}", addr);
+
+  //                             swarm
+  //                                 .behaviour_mut()
+  //                                 .kademlia
+  //                                 .add_address(&peer_id, addr.clone());
+
+  //                                 //swarm.dial("/ip6/::1/tcp/12345".parse::<Multiaddr>().unwrap());
+  //                                 swarm.dial(addr).unwrap();
+  //                         }
+  //                     }
+  //                 }
+  //             }
+  //             SwarmEvent::Behaviour(Event::Ping(e)) => {
+  //               println!("Ping {:?}", e);
+  //             }
+  //             SwarmEvent::Behaviour(Event::Kademlia(e)) => {
+  //               println!("Kademlia {:?}", e);
+  //             }
+  //             SwarmEvent::Behaviour(Event::Relay(e)) => {
+  //               println!("Relay {:?}", e);
+  //             }
+  //             SwarmEvent::Behaviour(Event::AutoNat(e)) => {
+  //               println!("AutoNat {:?}", e);
+
+  //             }
+  //             SwarmEvent::Behaviour(Event::Gossipsub(GossipsubEvent::Message { message, .. })) => {
+  //               println!(
+  //                 "Gossipsub Received: '{:?}' from {:?}",
+  //                 String::from_utf8_lossy(&message.data),
+  //                 message.source
+  //               );
+  //             }
+  //             SwarmEvent::Behaviour(Event::Mdns(event)) => {
+  //               println!("Mdns {event:?}");
+  //             }
+  //             SwarmEvent::NewListenAddr { address, .. } => {
+  //                 println!("NewListenAddr Listening on {:?}", address);
+  //             }
+  //             SwarmEvent::ConnectionEstablished {
+  //                 peer_id, endpoint, ..
+  //             } => {
+  //                 println!("ConnectionEstablished {:?} via {:?}", peer_id, endpoint);
+  //             }
+  //             SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+  //                 println!("OutgoingConnectionError to {:?}: {:?}", peer_id, error);
+  //             }
+  //             e => {
+  //                 if let SwarmEvent::NewListenAddr { address, .. } = &e {
+  //                     println!("NewListenAddr Listening on {:?}", address);
+  //                 }
+
+  //             }
+  //         }
+  //     }
+  // });
+
+  //println!("Searching for the closest peers to {:?}", local_peer_id);
+  //swarm.behaviour_mut().kademlia.get_closest_peers(PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap());
+
+  // Kick it off!
+  // block_on(async {
+  //     loop {
+  //         let event = swarm.select_next_some().await;
+
+  //         if let SwarmEvent::Behaviour(Event::Kademlia(KademliaEvent::OutboundQueryCompleted {
+  //           result: QueryResult::GetClosestPeers(result),
+  //           ..
+  //         })) = event
+  //         {
+  //             match result {
+  //                 Ok(ok) => {
+  //                     if !ok.peers.is_empty() {
+  //                         println!("Query finished with closest peers: {:#?}", ok.peers)
+  //                     } else {
+  //                         // The example is considered failed as there
+  //                         // should always be at least 1 reachable peer.
+  //                         println!("Query finished with no closest peers.")
+  //                     }
+  //                 }
+  //                 Err(GetClosestPeersError::Timeout { peers, .. }) => {
+  //                     if !peers.is_empty() {
+  //                         println!("Query timed out with closest peers: {:#?}", peers)
+  //                     } else {
+  //                         // The example is considered failed as there
+  //                         // should always be at least 1 reachable peer.
+  //                         println!("Query timed out with no closest peers.");
+  //                     }
+  //                 }
+  //             };
+
+  //             break;
+  //         }
+  //     }
+  // });
+
+  println!("stdin===============");
 
   loop {
     tokio::select! {
+
       line = stdin.next_line() => {
         let line = line?.expect("stdin closed");
         if let Err(e) = swarm
           .behaviour_mut()
           .gossipsub
           .publish(topic.clone(), line.as_bytes()) {
-            println!("{e:?}");
+            println!("gossipsub {e:?}");
         }
       }
+
       event = swarm.select_next_some() => {
         match event {
           SwarmEvent::Behaviour(Event::Gossipsub(GossipsubEvent::Message { message, .. })) => {
@@ -234,14 +415,57 @@ async fn main() -> Result<()> {
               message.source
             );
           }
-          SwarmEvent::Behaviour(Event::Mdns(event)) => {
-            println!("{event:?}");
+          SwarmEvent::Behaviour(Event::Identify(e)) => {
+            println!("Identify {:?}", e);
+
+              if let IdentifyEvent::Received {
+                  peer_id,
+                  info:
+                      IdentifyInfo {
+                          listen_addrs,
+                          protocols,
+                          ..
+                      },
+              } = e
+              {
+                  if protocols
+                      .iter()
+                      .any(|p| p.as_bytes() == kad::protocol::DEFAULT_PROTO_NAME)
+                  {
+                      for addr in listen_addrs {
+                        println!("Update local DHT {:?}", addr);
+
+                          swarm
+                              .behaviour_mut()
+                              .kademlia
+                              .add_address(&peer_id, addr.clone());
+                              //swarm.behaviour_mut().gossipsub.add_explicit_peer();
+                              //swarm.dial("/ip6/::1/tcp/12345".parse::<Multiaddr>().unwrap());
+                              //swarm.dial(addr).unwrap();
+                      }
+                  }
+              }
           }
-          // SwarmEvent::Behaviour(Event::Kademlia(event)) => {
-          //   println!("{event:?}");
-          // }
+        //  SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+        //   MdnsEvent::Discovered(list) => {
+        //     for (peer, _) in list {
+        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        //     }
+        //   }
+        //   MdnsEvent::Expired(list) => {
+        //     for (peer, _) in list {
+        //       if !swarm.behaviour().mdns.has_node(&peer) {
+        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+        //       }
+        //     }
+        //   }
+        // }
+
+          SwarmEvent::Behaviour(Event::Kademlia(event)) => {
+            println!("Kademlia {event:?}");
+          }
           SwarmEvent::NewListenAddr { address, .. } => {
-              println!("Listening on {:?}", address);
+              println!("NewListenAddr Listening on {:?}", address);
           }
           SwarmEvent::Behaviour(Event::Relay(client::Event::ReservationReqAccepted {
               ..
@@ -250,18 +474,16 @@ async fn main() -> Result<()> {
               println!("Relay accepted our reservation request.");
           }
           SwarmEvent::Behaviour(Event::Relay(event)) => {
-              println!("{:?}", event)
+              println!("Relay {:?}", event)
           }
           SwarmEvent::Behaviour(Event::Dcutr(event)) => {
-              println!("{:?}", event)
-          }
-          SwarmEvent::Behaviour(Event::Identify(event)) => {
-              println!("{:?}", event)
+              println!("Dcutr {:?}", event)
           }
           SwarmEvent::Behaviour(Event::Ping(_)) => {}
           SwarmEvent::ConnectionEstablished {
               peer_id, endpoint, ..
           } => {
+            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
               println!("Established connection to {:?} via {:?}", peer_id, endpoint);
           }
           SwarmEvent::OutgoingConnectionError { peer_id, error } => {
@@ -270,6 +492,8 @@ async fn main() -> Result<()> {
           _ => {}
         }
       }
+
+
     }
   }
 }

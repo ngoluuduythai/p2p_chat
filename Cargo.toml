@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 libp2p = { git = "https://github.com/libp2p/rust-libp2p", features = ["dcutr", "tcp-tokio", "mdns-tokio"] }
 clap = { version = "3.1", features = ["derive"] }
-futures = "0.3"
+futures = "0.3.24"
 futures-timer = "3.0"
 
 tokio = { version = "*", features = ["full"] }
