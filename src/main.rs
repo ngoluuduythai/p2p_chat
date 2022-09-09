@@ -105,23 +105,23 @@ async fn main() -> Result<()> {
 
     //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
     //ip4/192.168.2.33/tcp/4001
-    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/7654/p2p/QmRnj8vCgyjuE2BcYrUcJsskaxasLSxCzvJB2jbsSptsdQ").unwrap();
+    // let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN/p2p-circuit/p2p/12D3KooWMAXwrRcBdK3hFECY7b69PVW5rfHRa2WQPmbmMezZnEVG").unwrap();
 
-    let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
-      PeerId::from_multihash(boot_peerid).unwrap()
-    } else {
-      panic!("invalid boot peerid");
-    };
+    // let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
+    //   PeerId::from_multihash(boot_peerid).unwrap()
+    // } else {
+    //   panic!("invalid boot peerid");
+    // };
   
-    println!("bootaddr: {boot_addr}");
+    // println!("bootaddr: {boot_addr}");
   
 
-    //for peer in &BOOTNODES {
-    kademlia.add_address(&boot_peerid, boot_addr.clone());
-    //}
+    // //for peer in &BOOTNODES {
+    // kademlia.add_address(&boot_peerid, boot_addr.clone());
+    // //}
 
-    // Not find another peer when don't have boostrap  
-    let _ = kademlia.bootstrap().unwrap();
+    // // Not find another peer when don't have boostrap  
+    // let _ = kademlia.bootstrap().unwrap();
     println!("Boostrap: {local_peer_id} success to DHT with qeury id");
 
     // Set a custom gossipsub
