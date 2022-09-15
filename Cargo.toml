@@ -18,7 +18,7 @@ anyhow = "*"
 env_logger = "0.9"
 log = "0.4"
 rand = "*"
-quinn = { version = "0.8.0", git = "https://github.com/quinn-rs/quinn.git", branch = "named-futures", default-features = false, features = ["tls-rustls", "futures-io", "futures-core"] }
+quinn = { git = "https://github.com/quinn-rs/quinn.git", branch = "named-futures", default-features = false, features = ["tls-rustls", "futures-io", "futures-core", "runtime-tokio"] }
 rustls = { version = "0.20.2", default-features = false, features = ["dangerous_configuration"] }
 if-watch = "1.1.1"
 thiserror = "1.0.26"

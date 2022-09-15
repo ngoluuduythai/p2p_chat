@@ -87,11 +87,6 @@ async fn main() -> Result<()> {
   // .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
   // .multiplex(libp2p::yamux::YamuxConfig::default())
   .boxed();
-
-  //  Boxed {
-  //   inner: Box::new(QuicTransport::new(Config::new(&local_key).unwrap())) as Box<_>
-  // };
-
   // Create a Gossipsub topic
   let topic = gossipsub::IdentTopic::new("chat");
 
@@ -126,12 +121,12 @@ async fn main() -> Result<()> {
     println!("bootaddr: {boot_addr}");
   
 
-    // //for peer in &BOOTNODES {
-    // kademlia.add_address(&boot_peerid, boot_addr.clone());
-    // //}
+    //for peer in &BOOTNODES {
+    kademlia.add_address(&boot_peerid, boot_addr.clone());
+    //}
 
-    // // Not find another peer when don't have boostrap  
-    // let _ = kademlia.bootstrap().unwrap();
+    // Not find another peer when don't have boostrap  
+    let _ = kademlia.bootstrap().unwrap();
     println!("Boostrap: {local_peer_id} success to DHT with qeury id");
 
     // Set a custom gossipsub
@@ -179,6 +174,7 @@ async fn main() -> Result<()> {
     .listen_on(
       Multiaddr::empty()
         .with("0.0.0.0".parse::<Ipv4Addr>().unwrap().into())
+        .with(Protocol::Udp(0))
         .with(Protocol::Quic),
     ) {
     Ok(_) => {},
@@ -235,6 +231,7 @@ async fn main() -> Result<()> {
         SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
           MdnsEvent::Discovered(list) => {
             for (peer, _) in list {
+              println!("PEER_1: {:?}", peer);
               swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
             }
           }
@@ -267,9 +264,9 @@ async fn main() -> Result<()> {
         .unwrap();
     }
     Mode::Listen => {
-      swarm
-        .listen_on(opts.relay_address.with(Protocol::P2pCircuit))
-        .unwrap();
+      // swarm
+      //   .listen_on(opts.relay_address.with(Protocol::P2pCircuit))
+      //   .unwrap();
     }
   }
 
@@ -461,6 +458,7 @@ async fn main() -> Result<()> {
          SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
           MdnsEvent::Discovered(list) => {
             for (peer, _) in list {
+              println!("PEER_2: {:?}", peer);
               swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
             }
           }
