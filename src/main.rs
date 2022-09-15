@@ -2,13 +2,15 @@ mod behaviour;
 mod event;
 mod helper;
 mod opts;
+mod quic_transport;
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr, IpAddr};
 
 use anyhow::Result;
 use clap::Parser;
 use futures::stream::StreamExt;
 use futures::{executor::block_on, FutureExt};
+use libp2p::core::transport::Boxed;
 use libp2p::gossipsub::{self, MessageAuthenticity, ValidationMode};
 use libp2p::identify::IdentifyEvent;
 use libp2p::kad::store::MemoryStore;
@@ -34,7 +36,7 @@ use tokio::io::AsyncBufReadExt;
 use behaviour::Behaviour;
 use event::Event;
 use helper::generate_ed25519;
-use libp2p::autonat;
+use libp2p::{autonat, websocket, dns};
 use libp2p::kad;
 use opts::{Mode, Opts};
 use std::str::FromStr;
@@ -49,6 +51,8 @@ const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 use futures_timer::Delay;
 use libp2p::kad::{GetClosestPeersError, Kademlia, KademliaConfig, KademliaEvent, QueryResult};
+
+use crate::quic_transport::{Config, socketaddr_to_multiaddr, QuicTransport};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -70,20 +74,26 @@ async fn main() -> Result<()> {
 
   // Create a tokio-based TCP transport use noise for authenticated
   // encryption and Mplex for multiplexing of substreams on a TCP stream.
-  let transport = OrTransport::new(
-    relay_transport,
-    block_on(DnsConfig::system(TokioTcpTransport::new(
-      GenTcpConfig::default().port_reuse(true),
-    )))
-    .unwrap(),
-  )
-  .upgrade(upgrade::Version::V1)
-  .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
-  .multiplex(libp2p::yamux::YamuxConfig::default())
+  let transport = 
+  // OrTransport::new(
+  //   relay_transport,
+  //   block_on(DnsConfig::system(TokioTcpTransport::new(
+  //     GenTcpConfig::default().port_reuse(true),
+  //   )))
+  //   .unwrap(),
+  // )
+  QuicTransport::new(Config::new(&local_key).unwrap())
+  // .upgrade(upgrade::Version::V1)
+  // .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
+  // .multiplex(libp2p::yamux::YamuxConfig::default())
   .boxed();
 
+  //  Boxed {
+  //   inner: Box::new(QuicTransport::new(Config::new(&local_key).unwrap())) as Box<_>
+  // };
+
   // Create a Gossipsub topic
-  let topic = gossipsub::IdentTopic::new("librum_1");
+  let topic = gossipsub::IdentTopic::new("chat");
 
   let mut swarm = {
     // Set mDNS
@@ -105,7 +115,7 @@ async fn main() -> Result<()> {
 
     //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
     //ip4/192.168.2.33/tcp/4001
-    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/7654/p2p/QmRnj8vCgyjuE2BcYrUcJsskaxasLSxCzvJB2jbsSptsdQ").unwrap();
+    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/4003/p2p/12D3KooWDfVV2caaXhXPsZti1wyZPtBj7kckpQ62oSCS3vxJuzyY").unwrap();
 
     let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
       PeerId::from_multihash(boot_peerid).unwrap()
@@ -116,12 +126,12 @@ async fn main() -> Result<()> {
     println!("bootaddr: {boot_addr}");
   
 
-    //for peer in &BOOTNODES {
-    kademlia.add_address(&boot_peerid, boot_addr.clone());
-    //}
+    // //for peer in &BOOTNODES {
+    // kademlia.add_address(&boot_peerid, boot_addr.clone());
+    // //}
 
-    // Not find another peer when don't have boostrap  
-    let _ = kademlia.bootstrap().unwrap();
+    // // Not find another peer when don't have boostrap  
+    // let _ = kademlia.bootstrap().unwrap();
     println!("Boostrap: {local_peer_id} success to DHT with qeury id");
 
     // Set a custom gossipsub
@@ -165,13 +175,15 @@ async fn main() -> Result<()> {
       .build()
   };
 
-  swarm
+  match swarm
     .listen_on(
       Multiaddr::empty()
         .with("0.0.0.0".parse::<Ipv4Addr>().unwrap().into())
-        .with(Protocol::Tcp(0)),
-    )
-    .unwrap();
+        .with(Protocol::Quic),
+    ) {
+    Ok(_) => {},
+    Err(e) => println!("ERROR LISTEN: {:?}", e),
+};
 
   block_on(async {
     let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
@@ -220,20 +232,20 @@ async fn main() -> Result<()> {
           println!("Relay told us our public address: {:?}", observed_addr);
           learned_observed_addr = true;
         }
-        // SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
-        //   MdnsEvent::Discovered(list) => {
-        //     for (peer, _) in list {
-        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-        //     }
-        //   }
-        //   MdnsEvent::Expired(list) => {
-        //     for (peer, _) in list {
-        //       if !swarm.behaviour().mdns.has_node(&peer) {
-        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
-        //       }
-        //     }
-        //   }
-        // },
+        SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+          MdnsEvent::Discovered(list) => {
+            for (peer, _) in list {
+              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+            }
+          }
+          MdnsEvent::Expired(list) => {
+            for (peer, _) in list {
+              if !swarm.behaviour().mdns.has_node(&peer) {
+                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+              }
+            }
+          }
+        },
         event => println!("event"),
       }
 
@@ -446,20 +458,20 @@ async fn main() -> Result<()> {
                   }
               }
           }
-        //  SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
-        //   MdnsEvent::Discovered(list) => {
-        //     for (peer, _) in list {
-        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-        //     }
-        //   }
-        //   MdnsEvent::Expired(list) => {
-        //     for (peer, _) in list {
-        //       if !swarm.behaviour().mdns.has_node(&peer) {
-        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
-        //       }
-        //     }
-        //   }
-        // }
+         SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+          MdnsEvent::Discovered(list) => {
+            for (peer, _) in list {
+              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+            }
+          }
+          MdnsEvent::Expired(list) => {
+            for (peer, _) in list {
+              if !swarm.behaviour().mdns.has_node(&peer) {
+                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+              }
+            }
+          }
+        }
 
           SwarmEvent::Behaviour(Event::Kademlia(event)) => {
             println!("Kademlia {event:?}");

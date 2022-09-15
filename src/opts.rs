@@ -13,7 +13,7 @@ pub struct Opts {
   /// The listening address
   #[clap(
     long,
-    default_value = "/ip4/3.19.56.240/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+    default_value = "/ip4/3.19.56.240/udp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
   )]
   pub relay_address: Multiaddr,
 
