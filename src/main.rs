@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
 
     //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
     //ip4/192.168.2.33/tcp/4001
-    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/4003/p2p/12D3KooWDfVV2caaXhXPsZti1wyZPtBj7kckpQ62oSCS3vxJuzyY").unwrap();
+    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/4003/p2p/12D3KooWERHN2kX14rZBbCkKnLKdDzbQfFjA8NUTvHANSmsqbacA").unwrap();
 
     let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
       PeerId::from_multihash(boot_peerid).unwrap()
