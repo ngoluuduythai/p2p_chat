@@ -44,11 +44,15 @@ use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
 
-const BOOTNODES: [&str; 1] = [
-  "QmRnj8vCgyjuE2BcYrUcJsskaxasLSxCzvJB2jbsSptsdQ",
+pub const BOOTSTRAP_ADDRESS: &str = "/ip4/3.19.56.240/tcp";
+pub const BOOTNODES: &[&str] = &[
+  "12D3KooWERHN2kX14rZBbCkKnLKdDzbQfFjA8NUTvHANSmsqbacA",
+  "12D3KooWDfVV2caaXhXPsZti1wyZPtBj7kckpQ62oSCS3vxJuzyY",
+  "12D3KooWMDoD3xyLF7g4N3a2krrBhW4gBuJ9TZaJ2vUVA5rmfFXt",
+  "12D3KooWACdDu7PiwBBukn58ZSjmMKucbB1KvuYPGStzihqSkJVs",
 ];
-
 const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+pub const PORTS: &[u16] = &[4003, 4043, 4344, 4443];
 
 use futures_timer::Delay;
 use libp2p::kad::{GetClosestPeersError, Kademlia, KademliaConfig, KademliaEvent, QueryResult};
@@ -116,21 +120,14 @@ async fn main() -> Result<()> {
 
     //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
     //ip4/192.168.2.33/tcp/4001
-    let boot_addr = Multiaddr::from_str("/ip4/3.19.56.240/tcp/4003/p2p/12D3KooWDfVV2caaXhXPsZti1wyZPtBj7kckpQ62oSCS3vxJuzyY").unwrap();
 
-    let boot_peerid = if let Protocol::P2p(boot_peerid) = boot_addr.iter().last().unwrap() {
-      PeerId::from_multihash(boot_peerid).unwrap()
-    } else {
-      panic!("invalid boot peerid");
-    };
-  
-    println!("bootaddr: {boot_addr}");
-  
 
-    //for peer in &BOOTNODES {
-    kademlia.add_address(&boot_peerid, boot_addr.clone());
-    //}
-
+    for (idx, peer) in BOOTNODES.iter().enumerate() {
+      kademlia.add_address(
+        &PeerId::from_str(peer)?,
+        format!("{BOOTSTRAP_ADDRESS}/{}", PORTS[idx]).parse::<Multiaddr>()?,
+      );
+    }
     // Not find another peer when don't have boostrap  
     let _ = kademlia.bootstrap().unwrap();
     println!("Boostrap: {local_peer_id} success to DHT with qeury id");
@@ -176,16 +173,27 @@ async fn main() -> Result<()> {
       .build()
   };
 
-  match swarm
+
+
+
+swarm
     .listen_on(
       Multiaddr::empty()
         .with("0.0.0.0".parse::<Ipv4Addr>().unwrap().into())
         .with(Protocol::Udp(0))
         .with(Protocol::Quic),
-    ) {
-    Ok(_) => {},
-    Err(e) => println!("ERROR LISTEN: {:?}", e),
-};
+    )?;
+
+// swarm.listen_on(
+//   Multiaddr::empty()
+//     .with("0.0.0.0".parse::<Ipv4Addr>().unwrap().into())
+//     .with(Protocol::Tcp(0)),
+// )?;
+
+let dial_addr =
+format!("{}/4003/p2p/{}", BOOTSTRAP_ADDRESS, BOOTNODES[0]).parse::<Multiaddr>()?;
+info!("Dial addr: {dial_addr}");
+swarm.dial(dial_addr.clone())?;
 
   block_on(async {
     let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
@@ -211,7 +219,7 @@ async fn main() -> Result<()> {
 
   // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
   // our local public address and (b) enable a freshly started relay to learn its public address.
-  swarm.dial(opts.relay_address.clone()).unwrap();
+  //swarm.dial(opts.relay_address.clone()).unwrap();
 
   block_on(async {
     let mut learned_observed_addr = false;
@@ -234,21 +242,21 @@ async fn main() -> Result<()> {
           println!("Relay told us our public address: {:?}", observed_addr);
           learned_observed_addr = true;
         }
-        SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
-          MdnsEvent::Discovered(list) => {
-            for (peer, _) in list {
-              println!("PEER_1: {:?}", peer);
-              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-            }
-          }
-          MdnsEvent::Expired(list) => {
-            for (peer, _) in list {
-              if !swarm.behaviour().mdns.has_node(&peer) {
-                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
-              }
-            }
-          }
-        },
+        // SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+        //   MdnsEvent::Discovered(list) => {
+        //     for (peer, _) in list {
+        //       println!("PEER_1: {:?}", peer);
+        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        //     }
+        //   }
+        //   MdnsEvent::Expired(list) => {
+        //     for (peer, _) in list {
+        //       if !swarm.behaviour().mdns.has_node(&peer) {
+        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+        //       }
+        //     }
+        //   }
+        // },
         event => println!("event: {:?}", event),
       }
 
@@ -461,21 +469,21 @@ async fn main() -> Result<()> {
                   }
               }
           }
-         SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
-          MdnsEvent::Discovered(list) => {
-            for (peer, _) in list {
-              println!("PEER_2: {:?}", peer);
-              swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-            }
-          }
-          MdnsEvent::Expired(list) => {
-            for (peer, _) in list {
-              if !swarm.behaviour().mdns.has_node(&peer) {
-                swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
-              }
-            }
-          }
-        }
+        //  SwarmEvent::Behaviour(Event::Mdns(event)) => match event {
+        //   MdnsEvent::Discovered(list) => {
+        //     for (peer, _) in list {
+        //       println!("PEER_2: {:?}", peer);
+        //       swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        //     }
+        //   }
+        //   MdnsEvent::Expired(list) => {
+        //     for (peer, _) in list {
+        //       if !swarm.behaviour().mdns.has_node(&peer) {
+        //         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer);
+        //       }
+        //     }
+        //   }
+        // }
 
           SwarmEvent::Behaviour(Event::Kademlia(event)) => {
             println!("Kademlia {event:?}");
