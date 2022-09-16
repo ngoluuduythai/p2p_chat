@@ -179,7 +179,10 @@ async fn main() -> Result<()> {
       .build()
   };
 
-
+  let dial_addr =
+  format!("{}/4003/p2p/{}", BOOTSTRAP_ADDRESS, BOOTNODES[0]).parse::<Multiaddr>()?;
+  println!("Dial addr: {dial_addr}");
+  swarm.dial(dial_addr.clone())?;
 
 
 swarm
@@ -196,10 +199,7 @@ swarm
 //     .with(Protocol::Tcp(0)),
 // )?;
 
-let dial_addr =
-format!("{}/4003/p2p/{}", BOOTSTRAP_ADDRESS, BOOTNODES[0]).parse::<Multiaddr>()?;
-info!("Dial addr: {dial_addr}");
-swarm.dial(dial_addr.clone())?;
+
 
   block_on(async {
     let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
