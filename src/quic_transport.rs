@@ -143,6 +143,7 @@ impl StreamMuxer for QuicMuxer {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<libp2p::core::muxing::StreamMuxerEvent, Self::Error>> {
+        // println!("POLLLLL");
         Poll::Pending
     }
 }
@@ -267,13 +268,13 @@ impl Transport for QuicTransport
     type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send>>;
 
     fn listen_on(&mut self, addr: Multiaddr) -> Result<ListenerId, TransportError<Self::Error>> {
-        println!("HELLO");
+        // println!("HELLO");
         let socket_addr =
             multiaddr_to_socketaddr(addr.clone()).ok_or(TransportError::MultiaddrNotSupported(addr))?;
 
         let client_config = self.config.client_config.clone();
         let server_config = self.config.server_config.clone();
-        println!("server_config: {:?}", server_config);
+        // println!("server_config: {:?}", server_config);
 
         let (mut endpoint, new_connections) =
             quinn::Endpoint::server(server_config, socket_addr).unwrap();
@@ -314,7 +315,6 @@ impl Transport for QuicTransport
         let socket_addr = multiaddr_to_socketaddr(addr.clone())
             .ok_or_else(|| TransportError::MultiaddrNotSupported(addr.clone()))?;
         if socket_addr.port() == 0 || socket_addr.ip().is_unspecified() {
-            println!("ERRRRR");
             return Err(TransportError::MultiaddrNotSupported(addr));
         }
 
@@ -533,44 +533,13 @@ impl Stream for Listener
     }
 }
 
-// pub(crate) fn multiaddr_to_socketaddr(addr: &Multiaddr) -> Option<SocketAddr> {
-//     println!("ADDR: {:?}", addr);
-//     let mut iter = addr.iter();
-//     let proto1 = iter.next()?;
-//     let proto2 = iter.next()?;
-//     let proto3 = iter.next()?;
-//     let proto4 = iter.next()?;
-
-//     for proto in iter {
-//         println!("PROTO: {:?}", proto);
-//         match proto {
-//             Protocol::P2p(_) => {
-//                 println!("P2p")
-//             } // Ignore a `/p2p/...` prefix of possibly outer protocols, if present.
-//             _ => return None,
-//         }
-//     }
-
-//     match (proto1, proto2, proto3, proto4) {
-//         (Protocol::Ip4(ip), Protocol::Udp(port), Protocol::Quic, Protocol::P2p(_)) => {
-//             println!("IP4");
-//             Some(SocketAddr::new(ip.into(), port))
-//         }
-//         (Protocol::Ip6(ip), Protocol::Udp(port), Protocol::Quic, _) => {
-//             println!("IP6");
-//             Some(SocketAddr::new(ip.into(), port))
-//         }
-//         _ => None,
-//     }
-// }
-
 fn multiaddr_to_socketaddr(mut addr: Multiaddr) -> Option<SocketAddr> {
     // "Pop" the IP address and TCP port from the end of the address,
     // ignoring a `/p2p/...` suffix as well as any prefix of possibly
     // outer protocols, if present.
     let mut port = None;
     while let Some(proto) = addr.pop() {
-        println!("PROTO: {:?}", proto);
+        // println!("PROTO: {:?}", proto);
         match proto {
             Protocol::Ip4(ipv4) => match port {
                 Some(port) => return Some(SocketAddr::new(ipv4.into(), port)),
@@ -581,8 +550,8 @@ fn multiaddr_to_socketaddr(mut addr: Multiaddr) -> Option<SocketAddr> {
                 None => port = Some(portnum),
             },
             Protocol::Quic => {},
-            Protocol::P2p(p) => {
-                println!("P2P: {:?}", p)
+            Protocol::P2p(_) => {
+                // println!("P2P: {:?}", p)
             }
             _ => return None,
         }

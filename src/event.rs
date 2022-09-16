@@ -7,7 +7,7 @@ use libp2p::ping::PingEvent;
 use libp2p::relay::v2::client;
 use libp2p::autonat;
 
-//#[derive(Debug)]
+#[derive(Debug)]
 pub enum Event {
   Ping(PingEvent),
   Identify(IdentifyEvent),

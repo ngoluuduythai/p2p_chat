@@ -39,6 +39,7 @@ use helper::generate_ed25519;
 use libp2p::{autonat, websocket, dns};
 use libp2p::kad;
 use opts::{Mode, Opts};
+use tracing::info;
 use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
@@ -80,6 +81,11 @@ async fn main() -> Result<()> {
   //   block_on(DnsConfig::system(TokioTcpTransport::new(
   //     GenTcpConfig::default().port_reuse(true),
   //   )))
+  //   .unwrap(),
+  // )
+  // OrTransport::new(
+  //   relay_transport,
+  //   block_on(DnsConfig::system(QuicTransport::new(Config::new(&local_key).unwrap())))
   //   .unwrap(),
   // )
   QuicTransport::new(Config::new(&local_key).unwrap())
@@ -243,7 +249,7 @@ async fn main() -> Result<()> {
             }
           }
         },
-        event => println!("event"),
+        event => println!("event: {:?}", event),
       }
 
       if learned_observed_addr && told_relay_observed_addr {
@@ -252,23 +258,23 @@ async fn main() -> Result<()> {
     }
   });
 
-  match opts.mode {
-    Mode::Dial => {
-      swarm
-        .dial(
-          opts
-            .relay_address
-            .with(Protocol::P2pCircuit)
-            .with(Protocol::P2p(opts.remote_peer_id.unwrap().into())),
-        )
-        .unwrap();
-    }
-    Mode::Listen => {
-      // swarm
-      //   .listen_on(opts.relay_address.with(Protocol::P2pCircuit))
-      //   .unwrap();
-    }
-  }
+  // match opts.mode {
+  //   Mode::Dial => {
+  //     swarm
+  //       .dial(
+  //         opts
+  //           .relay_address
+  //           .with(Protocol::P2pCircuit)
+  //           .with(Protocol::P2p(opts.remote_peer_id.unwrap().into())),
+  //       )
+  //       .unwrap();
+  //   }
+  //   Mode::Listen => {
+  //     swarm
+  //       .listen_on(opts.relay_address.with(Protocol::P2pCircuit))
+  //       .unwrap();
+  //   }
+  // }
 
   let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
   //let mut bootstrap_timer = Delay::new(BOOTSTRAP_INTERVAL);
@@ -497,9 +503,10 @@ async fn main() -> Result<()> {
               println!("Established connection to {:?} via {:?}", peer_id, endpoint);
           }
           SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-              println!("Outgoing connection error to {:?}: {:?}", peer_id, error);
-          }
-          _ => {}
+            println!("Outgoing connection error to {peer_id:?}: {error:?}");
+        }
+        event => println!("Other: {event:?}")
+          // _ => {}
         }
       }
 
