@@ -16,7 +16,7 @@ pub struct Behaviour {
   pub identify: Identify,
   pub dcutr: dcutr::behaviour::Behaviour,
   pub gossipsub: Gossipsub,
-  pub mdns: TokioMdns,
+  //pub mdns: TokioMdns,
   pub kademlia: Kademlia<MemoryStore>,
   pub autonat: autonat::Behaviour,
 }
