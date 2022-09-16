@@ -110,13 +110,19 @@ async fn main() -> Result<()> {
     let store = MemoryStore::new(local_peer_id);
     //let kademlia = Kademlia::with_config(local_peer_id, store, cfg);
 
-    let mut kademlia_config = KademliaConfig::default();
     // Instantly remove records and provider records.
-    //
-    // TODO: Replace hack with option to disable both.
-    kademlia_config.set_record_ttl(Some(Duration::from_secs(0)));
-    kademlia_config.set_provider_record_ttl(Some(Duration::from_secs(0)));
-    let mut kademlia = Kademlia::with_config(local_peer_id, store, kademlia_config);
+    let mut config = KademliaConfig::default();
+    config
+      .set_query_timeout(Duration::from_secs(10))
+      .set_connection_idle_timeout(Duration::from_secs(10))
+      .set_record_ttl(Some(Duration::from_secs(120)))
+      .set_publication_interval(None)
+      .set_replication_interval(None)
+      .set_provider_record_ttl(Some(Duration::from_secs(120)))
+      .set_provider_publication_interval(None);
+    let store = MemoryStore::new(local_peer_id);
+
+    let mut kademlia = Kademlia::with_config(local_peer_id, store, config);
 
     //let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
     //ip4/192.168.2.33/tcp/4001
@@ -129,7 +135,7 @@ async fn main() -> Result<()> {
       );
     }
     // Not find another peer when don't have boostrap  
-    let _ = kademlia.bootstrap().unwrap();
+    kademlia.bootstrap()?;
     println!("Boostrap: {local_peer_id} success to DHT with qeury id");
 
     // Set a custom gossipsub
@@ -205,7 +211,7 @@ swarm.dial(dial_addr.clone())?;
                       println!("NewListenAddr Listening on {:?}", address);
                   }
                   event => {
-                    //panic!("{:?}", event)
+                    println!("{:?}", event)
                   },
               }
           }
